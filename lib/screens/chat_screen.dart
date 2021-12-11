@@ -1,8 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flash_chat/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flash_chat/constants.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
+late final loggedInUser;
 
 class ChatScreen extends StatefulWidget {
   static String id = 'chat_screen';
@@ -14,7 +15,8 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  late final loggedInUser;
+  final messages =
+      FirebaseFirestore.instance.collection('messages').snapshots();
 
   final TextEditingController messageController = TextEditingController();
 
@@ -33,7 +35,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void messageStream() async {
     await for (var snapshot in _firestore.collection('messages').snapshots()) {
       for (var message in snapshot.docs) {
-        print(message.data);
+        print(message.data());
       }
     }
   }
@@ -67,7 +69,39 @@ class _ChatScreenState extends State<ChatScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
+          children: [
+            Expanded(
+              child: StreamBuilder(
+                stream: messages,
+                builder: (BuildContext context, AsyncSnapshot snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Has Error'));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: Text('Waiting'));
+                  }
+
+                  final data = snapshot.requireData;
+
+                  return ListView.builder(
+                    reverse: true,
+                    shrinkWrap: true,
+                    padding: EdgeInsets.all(15),
+                    itemCount: data.size,
+                    itemBuilder: (BuildContext context, int index) {
+                      final messageText = data.docs[index]['text'];
+                      final messageSender = data.docs[index]['sender'];
+                      final currentUser = loggedInUser.email;
+                      return MessageBubble(
+                        bubbleText: messageText,
+                        bubbleSender: messageSender,
+                        isMe: currentUser == messageSender,
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
             Container(
               decoration: kMessageContainerDecoration,
               child: Row(
@@ -83,13 +117,13 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
                   ),
                   FlatButton(
-                    onPressed: () async {
+                    onPressed: () {
                       //Implement send functionality.
-                      await _firestore.collection('messages').add({
+                      _firestore.collection('messages').add({
                         'text': messageController.text,
                         'sender': loggedInUser.email,
                       });
-                      messageController.text = '';
+                      messageController.clear();
                     },
                     child: Text(
                       'Send',
@@ -101,6 +135,62 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class MessageBubble extends StatelessWidget {
+  const MessageBubble({
+    Key? key,
+    required this.bubbleText,
+    required this.bubbleSender,
+    required this.isMe,
+  }) : super(key: key);
+
+  final bubbleText;
+  final bubbleSender;
+  final isMe;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Column(
+        crossAxisAlignment:
+            isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$bubbleSender',
+            style: TextStyle(
+              color: Colors.black54,
+              fontSize: 12,
+            ),
+          ),
+          SizedBox(height: 5),
+          Container(
+            margin: EdgeInsets.only(bottom: 25),
+            padding: EdgeInsets.symmetric(
+              vertical: 10,
+              horizontal: 15,
+            ),
+            decoration: BoxDecoration(
+              color: isMe ? Colors.lightBlueAccent : Colors.black,
+              borderRadius: BorderRadius.only(
+                topLeft: isMe ? Radius.circular(30) : Radius.circular(0),
+                bottomLeft: Radius.circular(30),
+                bottomRight: Radius.circular(30),
+                topRight: isMe ? Radius.circular(0) : Radius.circular(30),
+              ),
+            ),
+            child: Text(
+              "$bubbleText",
+              style: TextStyle(
+                color: isMe ? Colors.white : Colors.white,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
